@@ -142,7 +142,6 @@ CREATE OR REPLACE PACKAGE BODY emp_management IS
     END calculate_bonus;
 
 
-    -- 🔥 FIXED TERMINATION (NO DELETE)
     PROCEDURE terminate_employee (
         p_emp_id IN NUMBER
     ) IS
