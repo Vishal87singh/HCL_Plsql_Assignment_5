@@ -251,3 +251,48 @@ ORDER BY line;
 
 
 SELECT * FROM EMPLOYEES;
+
+
+
+--------Synthetic 1000 Employee Generator--------
+DECLARE
+    v_first_names  SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST('John','Alice','Bob','Sara','David','Maria','Tom','Emma','Chris','Sophia');
+    v_last_names   SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST('Smith','Johnson','Williams','Brown','Jones','Miller','Davis','Garcia','Martin','Lee');
+BEGIN
+    FOR i IN 1..1000 LOOP
+        INSERT INTO employees (
+            employee_id,
+            first_name,
+            last_name,
+            email,
+            salary,
+            department_id,
+            hire_date,
+            manager_id
+        ) VALUES (
+            emp_seq.NEXTVAL,
+            v_first_names(TRUNC(DBMS_RANDOM.VALUE(1, v_first_names.COUNT+1))),
+            v_last_names(TRUNC(DBMS_RANDOM.VALUE(1, v_last_names.COUNT+1))),
+            'user'||emp_seq.CURRVAL||'@example.com',
+            TRUNC(DBMS_RANDOM.VALUE(30000,150000)),
+            TRUNC(DBMS_RANDOM.VALUE(1,6)),      -- 1 to 5 departments
+            SYSDATE - TRUNC(DBMS_RANDOM.VALUE(0, 3650)), -- last 10 years
+            CASE 
+                WHEN emp_seq.CURRVAL <= 20 THEN NULL   -- top-level managers
+                ELSE TRUNC(DBMS_RANDOM.VALUE(1, emp_seq.CURRVAL))
+            END
+        );
+    END LOOP;
+    COMMIT;
+END;
+/
+------Verify Row Count-------
+SELECT COUNT(*) FROM employees;
+
+------Sample Output Check-----
+SELECT employee_id, first_name, last_name, salary, manager_id
+FROM employees
+FETCH FIRST 10 ROWS ONLY;
+
+
+
