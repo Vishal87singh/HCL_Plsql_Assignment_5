@@ -1,0 +1,254 @@
+
+--create department 
+create table departments (
+    department_id number primary key,
+    department_name VARCHAR2(10) not null);
+    
+INSERT INTO departments VALUES (1, 'IT');
+INSERT INTO departments VALUES (2, 'HR');
+INSERT INTO departments VALUES (3, 'Finance');
+COMMIT;
+ 
+ --select * from departments;
+ 
+ --create employees table
+ 
+ CREATE TABLE employees (
+    employee_id NUMBER PRIMARY KEY,
+    first_name VARCHAR2(50) NOT NULL,
+    last_name VARCHAR2(50) NOT NULL,
+    email VARCHAR2(100) UNIQUE,
+    salary NUMBER(10,2) CHECK (salary > 0),
+    department_id NUMBER NOT NULL,
+    hire_date DATE DEFAULT SYSDATE,
+    CONSTRAINT fk_dept
+        FOREIGN KEY (department_id)
+        REFERENCES departments(department_id)
+);
+
+--create salary history table
+
+CREATE TABLE salary_history (
+    history_id NUMBER PRIMARY KEY,
+    employee_id NUMBER NOT NULL,
+    old_salary NUMBER(10,2),
+    new_salary NUMBER(10,2),
+    change_date DATE DEFAULT SYSDATE,
+    CONSTRAINT fk_emp
+        FOREIGN KEY (employee_id)
+        REFERENCES employees(employee_id)
+);
+
+--alter table
+--needed to add some extra colums of the status
+
+ALTER TABLE employees
+ADD status VARCHAR2(10) DEFAULT 'ACTIVE';
+
+
+
+--sequence to generate salary history id 
+CREATE SEQUENCE salary_history_seq
+START WITH 1
+INCREMENT BY 1;
+
+--create package specifications
+
+CREATE OR REPLACE PACKAGE emp_management IS
+
+    PROCEDURE hire_employee (
+        p_emp_id     IN NUMBER,
+        p_first_name IN VARCHAR2,
+        p_last_name  IN VARCHAR2,
+        p_email      IN VARCHAR2,
+        p_salary     IN NUMBER,
+        p_dept_id    IN NUMBER
+    );
+
+    PROCEDURE update_salary (
+        p_emp_id     IN NUMBER,
+        p_new_salary IN NUMBER
+    );
+
+    FUNCTION calculate_bonus (
+        p_emp_id        IN NUMBER,
+        p_bonus_percent IN NUMBER
+    ) RETURN NUMBER;
+
+    PROCEDURE terminate_employee (
+        p_emp_id IN NUMBER
+    );
+
+END emp_management;
+/
+
+
+
+--create functionalities of package employee management
+CREATE OR REPLACE PACKAGE BODY emp_management IS
+
+    PROCEDURE hire_employee (
+        p_emp_id     IN NUMBER,
+        p_first_name IN VARCHAR2,
+        p_last_name  IN VARCHAR2,
+        p_email      IN VARCHAR2,
+        p_salary     IN NUMBER,
+        p_dept_id    IN NUMBER
+    ) IS
+    BEGIN
+        INSERT INTO employees (
+            employee_id, first_name, last_name,
+            email, salary, department_id
+        )
+        VALUES (
+            p_emp_id, p_first_name, p_last_name,
+            p_email, p_salary, p_dept_id
+        );
+        COMMIT;
+    END hire_employee;
+
+
+    PROCEDURE update_salary (
+        p_emp_id     IN NUMBER,
+        p_new_salary IN NUMBER
+    ) IS
+    BEGIN
+        UPDATE employees
+        SET salary = p_new_salary
+        WHERE employee_id = p_emp_id;
+
+        IF SQL%ROWCOUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20011, 'Employee not found');
+        END IF;
+
+        COMMIT;
+    END update_salary;
+
+
+    FUNCTION calculate_bonus (
+        p_emp_id        IN NUMBER,
+        p_bonus_percent IN NUMBER
+    ) RETURN NUMBER IS
+        v_salary NUMBER;
+    BEGIN
+        SELECT salary INTO v_salary
+        FROM employees
+        WHERE employee_id = p_emp_id;
+
+        RETURN v_salary * p_bonus_percent;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RETURN 0;
+    END calculate_bonus;
+
+
+    -- 🔥 FIXED TERMINATION (NO DELETE)
+    PROCEDURE terminate_employee (
+        p_emp_id IN NUMBER
+    ) IS
+    BEGIN
+        UPDATE employees
+        SET status = 'INACTIVE'
+        WHERE employee_id = p_emp_id;
+
+        IF SQL%ROWCOUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20013, 'Employee not found');
+        END IF;
+
+        COMMIT;
+    END terminate_employee;
+
+END emp_management;
+/
+
+--trigger for salary audit
+
+CREATE OR REPLACE TRIGGER emp_salary_audit
+AFTER UPDATE OF salary ON employees
+FOR EACH ROW
+BEGIN
+    INSERT INTO salary_history (
+        history_id, employee_id, old_salary, new_salary
+    )
+    VALUES (
+        salary_history_seq.NEXTVAL,
+        :NEW.employee_id,
+        :OLD.salary,
+        :NEW.salary
+    );
+END;
+/
+
+--TRIGGER FOR DATA VALIDATION
+
+CREATE OR REPLACE TRIGGER emp_hire_date_check
+BEFORE INSERT ON employees
+FOR EACH ROW
+BEGIN
+    IF :NEW.hire_date > SYSDATE THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Hire date cannot be in future');
+    END IF;
+END;
+/
+
+
+--INDEXES FOR PERFORMANCE
+
+CREATE INDEX idx_emp_dept ON employees(department_id);
+CREATE INDEX idx_emp_salary ON employees(salary);
+CREATE INDEX idx_emp_name ON employees(UPPER(last_name));
+
+-------------------------------------------------------------
+
+--[TESTING]
+SELECT * FROM departments;
+
+BEGIN
+    emp_management.hire_employee(1,'VISHAL','SINGH','VISHAL@GMAIL.com', 50000,1
+    );
+    DBMS_OUTPUT.PUT_LINE('Employee 101 hired successfully');
+END;
+/
+
+SELECT * FROM employees;
+
+SET SERVEROUTPUT ON;
+
+BEGIN
+    emp_management.hire_employee(
+        101, 'Invalid', 'Salary', 'bad@company.com', 1000, 1
+    );
+END;
+/
+
+
+INSERT INTO employees
+VALUES (101, 'Future', 'Employee', 'future@company.com',
+        40000, 1, SYSDATE);
+        
+        
+    BEGIN
+    emp_management.update_salary(
+        p_emp_id     => 101,
+        p_new_salary => 55000
+    );
+    DBMS_OUTPUT.PUT_LINE('Salary updated for employee 101');
+END;
+/
+
+SELECT COUNT(*) AS total_employees
+FROM employees;
+
+BEGIN
+    emp_management.terminate_employee(101);
+END;
+/
+
+SELECT line, text
+FROM user_source
+WHERE name = 'EMP_MANAGEMENT'
+AND type = 'PACKAGE BODY'
+ORDER BY line;
+
+
+SELECT * FROM EMPLOYEES;
