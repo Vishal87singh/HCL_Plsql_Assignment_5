@@ -1,0 +1,126 @@
+CREATE OR REPLACE TABLE departments (
+    department_id NUMBER,
+    department_name STRING
+);
+
+CREATE OR REPLACE TABLE employees (
+    employee_id NUMBER,
+    first_name STRING,
+    last_name STRING,
+    email STRING,
+    salary NUMBER(10,2),
+    department_id NUMBER,
+    hire_date DATE,
+    status STRING,
+    manager_id NUMBER
+);
+
+CREATE OR REPLACE TABLE salary_history (
+    history_id NUMBER,
+    employee_id NUMBER,
+    old_salary NUMBER(10,2),
+    new_salary NUMBER(10,2),
+    change_date DATE
+);
+
+CREATE OR REPLACE TABLE salary_history (
+    history_id NUMBER,
+    employee_id NUMBER,
+    old_salary NUMBER(10,2),
+    new_salary NUMBER(10,2),
+    change_date DATE
+);
+
+
+CREATE OR REPLACE SEQUENCE salary_history_seq START = 1 INCREMENT = 1;
+
+
+------Package → Stored Procedure Rewrite----
+  CREATE OR REPLACE PROCEDURE hire_employee(
+    p_emp_id NUMBER,
+    p_first_name STRING,
+    p_last_name STRING,
+    p_email STRING,
+    p_salary NUMBER,
+    p_dept_id NUMBER
+)
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+    INSERT INTO employees(employee_id, first_name, last_name, email, salary, department_id, hire_date, status)
+    VALUES(p_emp_id, p_first_name, p_last_name, p_email, p_salary, p_dept_id, CURRENT_DATE(), 'ACTIVE');
+    
+    RETURN 'Employee hired successfully';
+$$;
+
+
+CREATE OR REPLACE PROCEDURE update_salary(
+    p_emp_id NUMBER,
+    p_new_salary NUMBER
+)
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+    UPDATE employees SET salary = p_new_salary WHERE employee_id = p_emp_id;
+
+    RETURN 'Salary updated';
+$$;
+
+
+
+CREATE OR REPLACE FUNCTION calculate_bonus(
+    p_emp_id NUMBER,
+    p_bonus_percent NUMBER
+)
+RETURNS NUMBER
+LANGUAGE SQL
+AS
+$$
+    SELECT salary * p_bonus_percent FROM employees WHERE employee_id = p_emp_id;
+$$;
+
+
+CREATE OR REPLACE PROCEDURE terminate_employee(
+    p_emp_id NUMBER
+)
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+    UPDATE employees SET status = 'INACTIVE' WHERE employee_id = p_emp_id;
+    RETURN 'Employee terminated';
+$$;
+
+
+
+-------Trigger → Stream/Task Rewrite-----  Snowflake has no triggers, so we implement:  Stream = track changed rows,  Task = run periodic insert------
+
+
+CREATE OR REPLACE STREAM emp_salary_stream
+ON TABLE employees
+SHOW_INITIAL_ROWS = FALSE;
+
+
+------Create Task to Populate Salary History----
+CREATE OR REPLACE TASK emp_salary_audit_task
+WAREHOUSE = COMPUTE_WH
+SCHEDULE = '1 MINUTE'
+AS
+INSERT INTO salary_history(history_id, employee_id, old_salary, new_salary, change_date)
+SELECT
+    salary_history_seq.NEXTVAL,
+    employee_id,
+    metadata$old_value:salary::NUMBER,
+    salary,
+    CURRENT_TIMESTAMP()
+FROM emp_salary_stream
+WHERE METADATA$ACTION = 'UPDATE';
+
+-----Then activate task:-----
+ALTER TASK emp_salary_audit_task RESUME;
+
+
+
+
